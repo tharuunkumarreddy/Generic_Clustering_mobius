@@ -4,6 +4,10 @@ inputs:
   - name: dataset_url
     type: String
     description: URL to fetch the dataset from (supports CSV, JSON, Parquet, etc.).
+  - name: dataset_filename
+    type: String
+    description: Optional filename to save the dataset as. If not provided, uses filename from URL.
+    default: ""
 outputs:
   - name: dataset
     type: Dataset
@@ -24,92 +28,55 @@ implementation:
         import argparse
         import os
         import requests
-        from urllib.parse import urlparse, quote
-        import re
+        from urllib.parse import urlparse
         
         parser = argparse.ArgumentParser()
         parser.add_argument('--dataset_url', type=str, required=True)
+        parser.add_argument('--dataset_filename', type=str, default="")
         parser.add_argument('--dataset', type=str, required=True)
         args = parser.parse_args()
         
         # URL to fetch dataset from
-        dataset_url = args.dataset_url.strip()
-        
-        # Replace $ with %24 if present in URL
-        if '$' in dataset_url:
-            print(f"Original URL contains '$' symbol, encoding it...")
-            dataset_url = dataset_url.replace('$', '%24')
-        
+        dataset_url = args.dataset_url
         print(f"Fetching dataset from CDN: {dataset_url}")
         
-        # Extract filename from URL
-        parsed_url = urlparse(dataset_url)
-        path = parsed_url.path
-        filename = os.path.basename(path)
-        
-        # Clean up filename and provide fallback
-        if not filename or filename == '':
-            # Try to extract from the last part of path
-            path_parts = [p for p in path.split('/') if p]
-            if path_parts:
-                filename = path_parts[-1]
-            else:
+        # Determine filename
+        if args.dataset_filename:
+            filename = args.dataset_filename
+        else:
+            # Extract filename from URL
+            parsed_url = urlparse(dataset_url)
+            filename = os.path.basename(parsed_url.path)
+            if not filename:
                 filename = "dataset.csv"  # default fallback
-        
-        # Remove any URL encoding from filename
-        filename = filename.replace('%24', '$')
         
         print(f"Saving as: {filename}")
         
-        try:
-            # Step 1: Download dataset from CDN
-            print(f"Starting download...")
-            response = requests.get(dataset_url, stream=True, timeout=300)
-            response.raise_for_status()
-            
-            # Create output directory
-            os.makedirs(args.dataset, exist_ok=True)
-            output_path = os.path.join(args.dataset, filename)
-            
-            # Step 2: Write dataset to file in chunks (efficient for large files)
-            print(f"Writing dataset to file...")
-            total_size = 0
-            with open(output_path, "wb") as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-                        total_size += len(chunk)
-            
-            print(f"Dataset downloaded successfully!")
-            print(f"Total size: {total_size / (1024*1024):.2f} MB")
-            print(f"Dataset saved at: {output_path}")
-            
-        except requests.exceptions.HTTPError as e:
-            print(f"HTTP Error occurred: {e}")
-            print(f"Status Code: {response.status_code}")
-            print(f"Response: {response.text[:500]}")  # Print first 500 chars of response
-            
-            # Create a placeholder file to avoid artifact save error
-            os.makedirs(args.dataset, exist_ok=True)
-            error_file = os.path.join(args.dataset, "error.txt")
-            with open(error_file, "w") as f:
-                f.write(f"Error downloading dataset:\n{str(e)}\n\nURL: {dataset_url}\n")
-            
-            raise
-            
-        except requests.exceptions.RequestException as e:
-            print(f"Request Error occurred: {e}")
-            
-            # Create a placeholder file to avoid artifact save error
-            os.makedirs(args.dataset, exist_ok=True)
-            error_file = os.path.join(args.dataset, "error.txt")
-            with open(error_file, "w") as f:
-                f.write(f"Error downloading dataset:\n{str(e)}\n\nURL: {dataset_url}\n")
-            
-            raise
+        # Step 1: Download dataset from CDN
+        response = requests.get(dataset_url, stream=True)
+        response.raise_for_status()
+        
+        # Create output directory
+        os.makedirs(args.dataset, exist_ok=True)
+        output_path = os.path.join(args.dataset, filename)
+        
+        # Step 2: Write dataset to file in chunks (efficient for large files)
+        print(f"Downloading dataset...")
+        total_size = 0
+        with open(output_path, "wb") as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+                    total_size += len(chunk)
+        
+        print(f"Dataset downloaded successfully!")
+        print(f"Total size: {total_size / (1024*1024):.2f} MB")
+        print(f"Dataset saved at: {output_path}")
         
     args:
       - --dataset_url
       - {inputValue: dataset_url}
+      - --dataset_filename
+      - {inputValue: dataset_filename}
       - --dataset
       - {outputPath: dataset}

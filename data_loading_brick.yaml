@@ -1,0 +1,150 @@
+name: Data Loading Component
+description: Loads, validates, and summarizes datasets for clustering pipelines. Supports CSV, Parquet, Excel, and JSON formats with flexible encoding and separators.
+
+inputs:
+  - {name: input, type: String, description: 'Input dataset path (CSV, Parquet, Excel, or JSON)'}
+  - {name: format, type: String, default: 'auto', description: 'File format: auto, csv, parquet, excel, json'}
+  - {name: encoding, type: String, default: 'utf-8', description: 'File encoding'}
+  - {name: sep, type: String, default: ',', description: 'CSV separator (default: comma)'}
+
+outputs:
+  - {name: output_data, type: Data, description: 'Validated dataset file (CSV)'}
+  - {name: output_metadata, type: Data, description: 'Metadata JSON describing dataset statistics'}
+
+implementation:
+  container:
+    image: python:3.9
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        pip install --no-cache-dir pandas numpy pyarrow openpyxl >/dev/null 2>&1
+        exec "$0" "$@"
+      - python3
+      - -u
+      - -c
+      - |
+        import os, sys, json, argparse
+        import pandas as pd
+        import numpy as np
+        from pathlib import Path
+
+        def load_data(input_path, file_format='auto', encoding='utf-8', sep=','):
+            print(f"\\nLoading data from: {input_path}")
+            if file_format == 'auto':
+                ext = Path(input_path).suffix.lower()
+                format_map = {'.csv': 'csv', '.parquet': 'parquet', '.pq': 'parquet', '.xlsx': 'excel', '.xls': 'excel', '.json': 'json'}
+                file_format = format_map.get(ext, 'csv')
+            print(f"Format: {file_format}")
+            try:
+                if file_format == 'csv':
+                    df = pd.read_csv(input_path, encoding=encoding, sep=sep)
+                elif file_format == 'parquet':
+                    df = pd.read_parquet(input_path)
+                elif file_format == 'excel':
+                    df = pd.read_excel(input_path)
+                elif file_format == 'json':
+                    df = pd.read_json(input_path)
+                else:
+                    raise ValueError(f"Unsupported format: {file_format}")
+                print(f"Loaded successfully: {df.shape}")
+                return df
+            except Exception as e:
+                print(f"Error loading data: {str(e)}")
+                raise
+
+        def validate_data(df):
+            print("\\nValidating data...")
+            validation = {'is_valid': True, 'errors': [], 'warnings': []}
+            if df.empty:
+                validation['is_valid'] = False
+                validation['errors'].append("Dataset is empty")
+                return validation, {}
+            if len(df) < 2:
+                validation['is_valid'] = False
+                validation['errors'].append("Need at least 2 samples")
+                return validation, {}
+            if df.columns.duplicated().any():
+                validation['warnings'].append("Duplicate column names")
+            numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+            categorical_cols = df.select_dtypes(exclude=[np.number]).columns.tolist()
+            missing_total = int(df.isnull().sum().sum())
+            missing_pct = (missing_total / (df.shape[0] * df.shape[1])) * 100
+            if missing_total > 0:
+                validation['warnings'].append(f"Missing values: {missing_total} ({missing_pct:.2f}%)")
+            inf_count = sum(df[col].isin([np.inf, -np.inf]).sum() for col in numeric_cols)
+            if inf_count > 0:
+                validation['warnings'].append(f"Infinite values: {inf_count}")
+            constant_cols = [col for col in df.columns if df[col].nunique() <= 1]
+            if constant_cols:
+                validation['warnings'].append(f"Constant columns: {constant_cols}")
+            metadata = {
+                'n_samples': int(df.shape[0]),
+                'n_features': int(df.shape[1]),
+                'columns': list(df.columns),
+                'numeric_columns': numeric_cols,
+                'categorical_columns': categorical_cols,
+                'missing_values': {'total': missing_total, 'percentage': missing_pct},
+                'constant_columns': constant_cols,
+                'memory_mb': float(df.memory_usage(deep=True).sum() / 1024**2),
+                'validation': validation
+            }
+            if numeric_cols:
+                stats = {}
+                for col in numeric_cols:
+                    try:
+                        stats[col] = {
+                            'mean': float(df[col].mean()),
+                            'std': float(df[col].std()),
+                            'min': float(df[col].min()),
+                            'max': float(df[col].max())
+                        }
+                    except Exception:
+                        pass
+                metadata['statistics'] = stats
+            return validation, metadata
+
+        def save_outputs(df, metadata, output_data_path, output_metadata_path):
+            os.makedirs(os.path.dirname(output_data_path) or '.', exist_ok=True)
+            os.makedirs(os.path.dirname(output_metadata_path) or '.', exist_ok=True)
+            df.to_csv(output_data_path, index=False)
+            with open(output_metadata_path, 'w') as f:
+                json.dump(metadata, f, indent=2)
+            print(f"Saved data to {output_data_path} and metadata to {output_metadata_path}")
+
+        if __name__ == "__main__":
+            parser = argparse.ArgumentParser(description="Load and validate data for clustering")
+            parser.add_argument("--input", required=True)
+            parser.add_argument("--format", default="auto")
+            parser.add_argument("--encoding", default="utf-8")
+            parser.add_argument("--sep", default=",")
+            parser.add_argument("--output_data", required=True)
+            parser.add_argument("--output_metadata", required=True)
+            args = parser.parse_args()
+
+            df = load_data(args.input, args.format, args.encoding, args.sep)
+            validation, metadata = validate_data(df)
+
+            if not validation['is_valid']:
+                print("Validation failed:")
+                for err in validation['errors']:
+                    print(f" - {err}")
+                sys.exit(1)
+
+            save_outputs(df, metadata, args.output_data, args.output_metadata)
+            print("\\nData loading complete.")
+
+    args:
+      - --input
+      - {inputValue: input}
+      - --format
+      - {inputValue: format}
+      - --encoding
+      - {inputValue: encoding}
+      - --sep
+      - {inputValue: sep}
+      - --output_data
+      - {outputPath: output_data}
+      - --output_metadata
+      - {outputPath: output_metadata}

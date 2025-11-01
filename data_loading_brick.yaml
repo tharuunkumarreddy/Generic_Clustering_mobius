@@ -2,14 +2,27 @@ name: Data Loading Component
 description: Load and validate data for clustering pipelines. Supports CSV, Parquet, Excel, and JSON formats. Performs comprehensive data validation and generates metadata.
 
 inputs:
-  - {name: input_path, type: String, description: 'Path to input data file (CSV, Parquet, Excel, JSON)'}
-  - {name: file_format, type: String, description: 'File format (auto, csv, parquet, excel, json)', default: 'auto'}
-  - {name: encoding, type: String, description: 'File encoding for CSV files', default: 'utf-8'}
-  - {name: sep, type: String, description: 'CSV separator character', default: ','}
+  - name: input_path
+    type: String
+    description: 'Path to input data file (CSV, Parquet, Excel, JSON)'
+  - name: file_format
+    type: String
+    description: 'File format (auto, csv, parquet, excel, json)'
+    default: 'auto'
+  - name: encoding
+    type: String
+    description: 'File encoding for CSV files'
+    default: 'utf-8'
+  - name: sep
+    type: String
+    description: 'CSV separator character'
+    default: ','
 
 outputs:
-  - {name: output_data, type: Data}
-  - {name: output_metadata, type: Data}
+  - name: output_data
+    type: Data
+  - name: output_metadata
+    type: Data
 
 implementation:
   container:

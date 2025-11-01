@@ -1,0 +1,82 @@
+name: Get dataset through CDN
+description: Downloads dataset from a CDN URL and saves it locally.
+inputs:
+  - name: dataset_url
+    type: String
+    description: URL to fetch the dataset from (supports CSV, JSON, Parquet, etc.).
+  - name: dataset_filename
+    type: String
+    description: Optional filename to save the dataset as. If not provided, uses filename from URL.
+    default: ""
+outputs:
+  - name: dataset
+    type: Dataset
+    description: "Downloaded dataset from the CDN URL."
+implementation:
+  container:
+    image: nikhilv215/nesy-factory:v22
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        exec "$0" "$@"
+      - python3
+      - -u
+      - -c
+      - |
+        import argparse
+        import os
+        import requests
+        from urllib.parse import urlparse
+        
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--dataset_url', type=str, required=True)
+        parser.add_argument('--dataset_filename', type=str, default="")
+        parser.add_argument('--dataset', type=str, required=True)
+        args = parser.parse_args()
+        
+        # URL to fetch dataset from
+        dataset_url = args.dataset_url
+        print(f"Fetching dataset from CDN: {dataset_url}")
+        
+        # Determine filename
+        if args.dataset_filename:
+            filename = args.dataset_filename
+        else:
+            # Extract filename from URL
+            parsed_url = urlparse(dataset_url)
+            filename = os.path.basename(parsed_url.path)
+            if not filename:
+                filename = "dataset.csv"  # default fallback
+        
+        print(f"Saving as: {filename}")
+        
+        # Step 1: Download dataset from CDN
+        response = requests.get(dataset_url, stream=True)
+        response.raise_for_status()
+        
+        # Create output directory
+        os.makedirs(args.dataset, exist_ok=True)
+        output_path = os.path.join(args.dataset, filename)
+        
+        # Step 2: Write dataset to file in chunks (efficient for large files)
+        print(f"Downloading dataset...")
+        total_size = 0
+        with open(output_path, "wb") as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+                    total_size += len(chunk)
+        
+        print(f"Dataset downloaded successfully!")
+        print(f"Total size: {total_size / (1024*1024):.2f} MB")
+        print(f"Dataset saved at: {output_path}")
+        
+    args:
+      - --dataset_url
+      - {inputValue: dataset_url}
+      - --dataset_filename
+      - {inputValue: dataset_filename}
+      - --dataset
+      - {outputPath: dataset}

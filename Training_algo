@@ -156,6 +156,27 @@ implementation:
                     'algorithm': 'auto'
                 }
             },
+            'HDBSCAN': {
+                'module': 'hdbscan',
+                'class': 'HDBSCAN',
+                'category': 'density',
+                'has_fit': True,
+                'has_fit_predict': False,
+                'has_predict': False,
+                'has_labels': True,
+                'allows_noise': True,
+                'preferred_training': 'fit',
+                'preferred_inference': 'approximate_predict',
+                'requires_extra': True,
+                'default_params': {
+                    'min_cluster_size': 5,
+                    'min_samples': None,
+                    'cluster_selection_epsilon': 0.0,
+                    'metric': 'euclidean',
+                    'alpha': 1.0,
+                    'cluster_selection_method': 'eom'
+                }
+            },
             'AgglomerativeClustering': {
                 'module': 'sklearn.cluster',
                 'class': 'AgglomerativeClustering',

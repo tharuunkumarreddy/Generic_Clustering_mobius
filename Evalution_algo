@@ -453,21 +453,26 @@ implementation:
             basic = evaluation_results['basic_statistics']
             lines.append("")
             lines.append("Dataset Overview:")
-            lines.append(f"  Dataset: {evaluation_results.get('dataset', 'Unknown')}")
-            lines.append(f"  Algorithm: {evaluation_results.get('algorithm', 'Unknown')}")
+            dataset_name = evaluation_results.get('dataset', 'Unknown')
+            algorithm_name = evaluation_results.get('algorithm', 'Unknown')
+            lines.append(f"  Dataset: {dataset_name}")
+            lines.append(f"  Algorithm: {algorithm_name}")
             lines.append(f"  Total samples: {basic['n_samples']}")
             lines.append(f"  Clusters: {basic['n_clusters']}")
-            lines.append(f"  Noise points: {basic['n_noise']} ({basic['noise_percentage']:.1f}%)")
+            noise_pct = basic['noise_percentage']
+            lines.append(f"  Noise points: {basic['n_noise']} ({noise_pct:.1f}%)")
             if basic['n_clusters'] > 0:
-                lines.append(f"  Avg cluster size: {basic['avg_cluster_size']:.1f} +/- {basic['std_cluster_size']:.1f}")
+                avg_size = basic['avg_cluster_size']
+                std_size = basic['std_cluster_size']
+                lines.append(f"  Avg cluster size: {avg_size:.1f} +/- {std_size:.1f}")
             
-            if evaluation_results.get('internal_metrics') and not evaluation_results['internal_metrics'].get('reason'):
-                internal = evaluation_results['internal_metrics']
+            internal = evaluation_results.get('internal_metrics')
+            if internal and not internal.get('reason'):
                 lines.append("")
                 lines.append("Internal Metrics (Clustering Quality):")
                 
-                if internal.get('silhouette_score') is not None:
-                    sil = internal['silhouette_score']
+                sil = internal.get('silhouette_score')
+                if sil is not None:
                     if sil > 0.7:
                         quality = "Excellent"
                     elif sil > 0.5:
@@ -479,23 +484,23 @@ implementation:
                     lines.append(f"  Silhouette Score: {sil:.4f} ({quality})")
                     lines.append("    -> Range: -1 to 1 (higher is better)")
                 
-                if internal.get('davies_bouldin_score') is not None:
-                    db = internal['davies_bouldin_score']
+                db = internal.get('davies_bouldin_score')
+                if db is not None:
                     lines.append(f"  Davies-Bouldin Score: {db:.4f}")
                     lines.append("    -> Range: 0 to inf (lower is better)")
                 
-                if internal.get('calinski_harabasz_score') is not None:
-                    ch = internal['calinski_harabasz_score']
+                ch = internal.get('calinski_harabasz_score')
+                if ch is not None:
                     lines.append(f"  Calinski-Harabasz Score: {ch:.4f}")
                     lines.append("    -> Range: 0 to inf (higher is better)")
             
-            if evaluation_results.get('external_metrics') and evaluation_results['external_metrics'].get('available'):
-                external = evaluation_results['external_metrics']
+            external = evaluation_results.get('external_metrics')
+            if external and external.get('available'):
                 lines.append("")
                 lines.append("External Metrics (vs Ground Truth):")
                 
-                if external.get('adjusted_rand_index') is not None:
-                    ari = external['adjusted_rand_index']
+                ari = external.get('adjusted_rand_index')
+                if ari is not None:
                     if ari > 0.9:
                         match = "Excellent"
                     elif ari > 0.7:
@@ -507,27 +512,29 @@ implementation:
                     lines.append(f"  Adjusted Rand Index: {ari:.4f} ({match})")
                     lines.append("    -> 1.0 = perfect match with ground truth")
                 
-                if external.get('adjusted_mutual_info') is not None:
-                    ami = external['adjusted_mutual_info']
+                ami = external.get('adjusted_mutual_info')
+                if ami is not None:
                     lines.append(f"  Adjusted Mutual Info: {ami:.4f}")
                 
-                if external.get('normalized_mutual_info') is not None:
-                    nmi = external['normalized_mutual_info']
+                nmi = external.get('normalized_mutual_info')
+                if nmi is not None:
                     lines.append(f"  Normalized Mutual Info: {nmi:.4f}")
             
-            if evaluation_results.get('cluster_quality') and not evaluation_results['cluster_quality'].get('error'):
-                quality = evaluation_results['cluster_quality']
+            quality = evaluation_results.get('cluster_quality')
+            if quality and not quality.get('error'):
                 lines.append("")
                 lines.append("Cluster Quality:")
                 
-                if quality.get('mean_intra_cluster_distance'):
-                    lines.append(f"  Intra-cluster distance (compactness): {quality['mean_intra_cluster_distance']:.4f}")
+                intra_dist = quality.get('mean_intra_cluster_distance')
+                if intra_dist:
+                    lines.append(f"  Intra-cluster distance (compactness): {intra_dist:.4f}")
                 
-                if quality.get('mean_inter_cluster_distance'):
-                    lines.append(f"  Inter-cluster distance (separation): {quality['mean_inter_cluster_distance']:.4f}")
+                inter_dist = quality.get('mean_inter_cluster_distance')
+                if inter_dist:
+                    lines.append(f"  Inter-cluster distance (separation): {inter_dist:.4f}")
                 
-                if quality.get('separation_ratio'):
-                    ratio = quality['separation_ratio']
+                ratio = quality.get('separation_ratio')
+                if ratio:
                     if ratio > 2.0:
                         quality_label = "Excellent"
                     elif ratio > 1.5:
@@ -539,18 +546,25 @@ implementation:
                     lines.append(f"  Separation ratio: {ratio:.4f} ({quality_label})")
                     lines.append("    -> Higher is better (well-separated clusters)")
             
-            if evaluation_results.get('per_cluster_statistics'):
+            per_cluster = evaluation_results.get('per_cluster_statistics')
+            if per_cluster:
                 lines.append("")
                 lines.append("Per-Cluster Summary:")
-                for cluster_key in sorted(evaluation_results['per_cluster_statistics'].keys()):
-                    stats = evaluation_results['per_cluster_statistics'][cluster_key]
+                for cluster_key in sorted(per_cluster.keys()):
+                    stats = per_cluster[cluster_key]
                     sil = stats.get('silhouette_score')
-                    sil_str = f", sil={sil:.3f}" if sil is not None else ""
-                    lines.append(f"  {cluster_key}: {stats['size']} samples ({stats['percentage']:.1f}%){sil_str}")
+                    size = stats['size']
+                    pct = stats['percentage']
+                    if sil is not None:
+                        sil_str = f", sil={sil:.3f}"
+                    else:
+                        sil_str = ""
+                    lines.append(f"  {cluster_key}: {size} samples ({pct:.1f}%){sil_str}")
             
             lines.append("=" * 80)
             
-            return "\n".join(lines)
+            newline = chr(10)
+            return newline.join(lines)
         
         parser = argparse.ArgumentParser(description="Evaluate clustering results")
         parser.add_argument("--test_data", required=True)

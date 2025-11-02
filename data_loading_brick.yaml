@@ -1,10 +1,10 @@
 name: Data Loading Component
-description: Load and validate data for clustering pipelines. Supports CSV, Parquet, Excel, and JSON formats. Performs comprehensive data validation and generates metadata.
+description: Load and validate data for clustering pipelines. Accepts either a file path string or a Dataset directory from previous component. Supports CSV, Parquet, Excel, and JSON formats. Performs comprehensive data validation and generates metadata.
 
 inputs:
-  - name: input_path
-    type: String
-    description: 'Path to input data file (CSV, Parquet, Excel, JSON)'
+  - name: input_dataset
+    type: Dataset
+    description: 'Input dataset from previous component (directory containing data file)'
   - name: file_format
     type: String
     description: 'File format (auto, csv, parquet, excel, json)'
@@ -44,6 +44,7 @@ implementation:
         import numpy as np
         from pathlib import Path
         import logging
+        import glob
         
         logging.basicConfig(level=logging.INFO)
         logger = logging.getLogger('data_loading')
@@ -52,6 +53,43 @@ implementation:
             directory = os.path.dirname(file_path)
             if directory and not os.path.exists(directory):
                 os.makedirs(directory, exist_ok=True)
+        
+        def find_data_file(input_path):
+            """
+            Find the actual data file in the input path.
+            Input can be either a file or a directory.
+            """
+            logger.info(f"Searching for data file in: {input_path}")
+            
+            # If input is a file, return it directly
+            if os.path.isfile(input_path):
+                logger.info(f"Input is a file: {input_path}")
+                return input_path
+            
+            # If input is a directory, find the data file inside
+            if os.path.isdir(input_path):
+                logger.info(f"Input is a directory, searching for data file...")
+                
+                # Search for common data file extensions
+                patterns = ['*.csv', '*.parquet', '*.pq', '*.xlsx', '*.xls', '*.json']
+                
+                for pattern in patterns:
+                    files = glob.glob(os.path.join(input_path, pattern))
+                    if files:
+                        data_file = files[0]  # Take the first match
+                        logger.info(f"Found data file: {data_file}")
+                        return data_file
+                
+                # If no data file found with extensions, list all files
+                all_files = [f for f in os.listdir(input_path) if os.path.isfile(os.path.join(input_path, f))]
+                if all_files:
+                    data_file = os.path.join(input_path, all_files[0])
+                    logger.info(f"No standard extension found, using first file: {data_file}")
+                    return data_file
+                
+                raise FileNotFoundError(f"No data file found in directory: {input_path}")
+            
+            raise FileNotFoundError(f"Input path not found: {input_path}")
         
         def load_data(input_path, file_format='auto', encoding='utf-8', sep=','):
             logger.info(f"Loading data from: {input_path}")
@@ -202,7 +240,7 @@ implementation:
             return validation, metadata
         
         parser = argparse.ArgumentParser(description="Load and validate data for clustering")
-        parser.add_argument("--input_path", required=True)
+        parser.add_argument("--input_dataset", required=True)
         parser.add_argument("--file_format", default='auto')
         parser.add_argument("--encoding", default='utf-8')
         parser.add_argument("--sep", default=',')
@@ -213,7 +251,7 @@ implementation:
         logger.info("="*80)
         logger.info("DATA LOADING COMPONENT")
         logger.info("="*80)
-        logger.info(f"Input: {args.input_path}")
+        logger.info(f"Input dataset: {args.input_dataset}")
         logger.info(f"Format: {args.file_format}")
         logger.info(f"Encoding: {args.encoding}")
         logger.info(f"Separator: {args.sep}")
@@ -224,8 +262,11 @@ implementation:
             ensure_directory_exists(args.output_data)
             ensure_directory_exists(args.output_metadata)
             
+            # Find the actual data file in the input dataset
+            data_file_path = find_data_file(args.input_dataset)
+            
             # Load data
-            df = load_data(args.input_path, args.file_format, args.encoding, args.sep)
+            df = load_data(data_file_path, args.file_format, args.encoding, args.sep)
             
             # Validate data
             validation, metadata = validate_data(df)
@@ -264,8 +305,8 @@ implementation:
             logger.info(f"Memory: {metadata['memory_mb']:.2f} MB")
             logger.info("="*80)
             
-        except FileNotFoundError:
-            logger.error(f"ERROR: File not found: {args.input_path}")
+        except FileNotFoundError as e:
+            logger.error(f"ERROR: {str(e)}")
             sys.exit(1)
         except Exception as e:
             logger.error(f"ERROR: {str(e)}")
@@ -273,8 +314,8 @@ implementation:
             traceback.print_exc()
             sys.exit(1)
     args:
-      - --input_path
-      - {inputValue: input_path}
+      - --input_dataset
+      - {inputPath: input_dataset}
       - --file_format
       - {inputValue: file_format}
       - --encoding

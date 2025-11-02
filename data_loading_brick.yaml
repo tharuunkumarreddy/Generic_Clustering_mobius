@@ -57,7 +57,7 @@ implementation:
                 os.makedirs(directory, exist_ok=True)
         
         def find_data_file(input_path):
-            """Find the actual data file in the input path"""
+            #Find the actual data file in the input path#
             logger.info(f"Searching for data file in: {input_path}")
             
             if os.path.isfile(input_path):
@@ -86,7 +86,7 @@ implementation:
             raise FileNotFoundError(f"Input path not found: {input_path}")
         
         def load_data(input_path, file_format='auto', encoding='utf-8', sep=','):
-            """Load data from various formats"""
+            #Load data from various formats#
             logger.info(f"Loading data from: {input_path}")
             
             if file_format == 'auto':
@@ -118,7 +118,7 @@ implementation:
             return df
         
         def validate_data(df):
-            """Validate dataset and generate metadata"""
+            #Validate dataset and generate metadata#
             logger.info("Validating data...")
             
             validation = {
@@ -301,3 +301,4 @@ implementation:
       - {outputPath: data}
       - --output_metadata
       - {outputPath: metadata}
+

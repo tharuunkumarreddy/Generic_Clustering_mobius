@@ -491,6 +491,7 @@ implementation:
             os.makedirs(os.path.dirname(output_labels), exist_ok=True)
             os.makedirs(os.path.dirname(output_metadata), exist_ok=True)
             
+            # Save model as pickle
             with open(output_model, 'wb') as f:
                 model_data = {
                     'model': model,
@@ -501,9 +502,15 @@ implementation:
                 pickle.dump(model_data, f)
             print(f"Model saved: {output_model}")
             
-            np.save(output_labels, train_labels)
+            # Save labels as CSV for consistency with pipeline
+            labels_df = pd.DataFrame({
+                'sample_index': np.arange(len(train_labels)),
+                'cluster_label': train_labels
+            })
+            labels_df.to_csv(output_labels, index=False)
             print(f"Labels saved: {output_labels}")
             
+            # Save metadata as JSON
             unique_labels = np.unique(train_labels)
             n_clusters = len(unique_labels[unique_labels != -1])
             n_noise = int(np.sum(train_labels == -1))
@@ -597,17 +604,31 @@ implementation:
             
             if args.parameters and args.parameters != '{}':
                 try:
+                    # Try JSON first (preferred)
                     user_params = json.loads(args.parameters)
-                    print(f"Applying {len(user_params)} user parameters:")
-                    for key, value in user_params.items():
-                        if key in parameters:
-                            old_value = parameters[key]
-                            parameters[key] = value
-                            print(f"  {key}: {old_value} -> {value}")
-                        else:
-                            print(f"  Warning: Unknown parameter '{key}' (ignored)")
-                except json.JSONDecodeError as e:
-                    raise ValueError(f"Invalid JSON in parameters: {e}")
+                except json.JSONDecodeError:
+                    # Fallback: try Python literal (handles single quotes)
+                    try:
+                        import ast
+                        user_params = ast.literal_eval(args.parameters)
+                        if not isinstance(user_params, dict):
+                            raise ValueError("Parameters must be a dictionary")
+                        print("Note: Parsed Python dict syntax (use JSON with double quotes for best compatibility)")
+                    except (ValueError, SyntaxError) as e:
+                        raise ValueError(
+                            f"Invalid parameters format. Use JSON like: "
+                            f'{{"n_clusters": 3}} or Python dict like: '
+                            f"{{'n_clusters': 3}}. Error: {e}"
+                        )
+                
+                print(f"Applying {len(user_params)} user parameters:")
+                for key, value in user_params.items():
+                    if key in parameters:
+                        old_value = parameters[key]
+                        parameters[key] = value
+                        print(f"  {key}: {old_value} -> {value}")
+                    else:
+                        print(f"  Warning: Unknown parameter '{key}' (ignored)")
             
             print("Final parameters:")
             for key, value in parameters.items():

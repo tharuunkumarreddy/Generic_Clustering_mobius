@@ -137,7 +137,7 @@ implementation:
             return df
         
         def load_ground_truth(ground_truth_path):
-            """Load ground truth labels if available"""
+            #Load ground truth labels if available#
             
             if not ground_truth_path or ground_truth_path.lower() == 'none':
                 logger.info("No ground truth provided")
@@ -334,7 +334,7 @@ implementation:
             return df, issues
         
         def split_data(df, ground_truth, test_size, random_state):
-            """Split data and ground truth together"""
+            #Split data and ground truth together#
             logger.info(f"Splitting data (test_size: {test_size})...")
             
             if test_size == 0 or test_size is None:

@@ -127,7 +127,7 @@ implementation:
             return df
         
         def extract_ground_truth(df, target_column, target_mapping_json):
-            """Extract and encode ground truth labels"""
+            #Extract and encode ground truth labels#
             
             if not target_column or target_column == '':
                 logger.info("No target column specified - skipping ground truth extraction")
@@ -434,3 +434,4 @@ implementation:
       - {outputPath: metadata}
       - --output_ground_truth
       - {outputPath: ground_truth}
+

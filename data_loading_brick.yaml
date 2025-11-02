@@ -1,5 +1,5 @@
 name: Data Loading Component
-description: Load and validate data for clustering pipelines. Accepts either a file path string or a Dataset directory from previous component. Supports CSV, Parquet, Excel, and JSON formats. Performs comprehensive data validation and generates metadata.
+description: Load and validate data for clustering pipelines. Supports ground truth extraction for supervised evaluation.
 
 inputs:
   - name: input_dataset
@@ -17,14 +17,25 @@ inputs:
     type: String
     description: 'CSV separator character'
     default: ','
+  - name: target_column
+    type: String
+    description: 'Target column name for ground truth (optional, e.g., "species")'
+    default: ''
+  - name: target_mapping
+    type: String
+    description: 'JSON mapping for categorical targets (e.g., {"setosa": 0, "versicolor": 1})'
+    default: '{}'
 
 outputs:
   - name: data
     type: Data
-    description: 'Loaded and validated dataset'
+    description: 'Loaded and validated dataset (WITHOUT target column)'
   - name: metadata
     type: Data
     description: 'Dataset metadata and validation results'
+  - name: ground_truth
+    type: Data
+    description: 'Ground truth labels if target_column specified'
 
 implementation:
   container:
@@ -57,7 +68,6 @@ implementation:
                 os.makedirs(directory, exist_ok=True)
         
         def find_data_file(input_path):
-            #Find the actual data file in the input path#
             logger.info(f"Searching for data file in: {input_path}")
             
             if os.path.isfile(input_path):
@@ -86,7 +96,6 @@ implementation:
             raise FileNotFoundError(f"Input path not found: {input_path}")
         
         def load_data(input_path, file_format='auto', encoding='utf-8', sep=','):
-            #Load data from various formats#
             logger.info(f"Loading data from: {input_path}")
             
             if file_format == 'auto':
@@ -117,8 +126,98 @@ implementation:
             logger.info(f"Loaded successfully: {df.shape[0]} rows x {df.shape[1]} columns")
             return df
         
+        def extract_ground_truth(df, target_column, target_mapping_json):
+            """Extract and encode ground truth labels"""
+            
+            if not target_column or target_column == '':
+                logger.info("No target column specified - skipping ground truth extraction")
+                return df, None, None
+            
+            logger.info(f"Extracting ground truth from column: '{target_column}'")
+            
+            # Check if target column exists
+            if target_column not in df.columns:
+                available_cols = ', '.join(df.columns.tolist())
+                raise ValueError(
+                    f"Target column '{target_column}' not found in dataset. "
+                    f"Available columns: {available_cols}"
+                )
+            
+            # Extract target column
+            target_series = df[target_column].copy()
+            logger.info(f"Found {len(target_series)} target values")
+            
+            # Parse mapping if provided
+            target_mapping = {}
+            if target_mapping_json and target_mapping_json != '{}':
+                try:
+                    target_mapping = json.loads(target_mapping_json)
+                    logger.info(f"Using custom mapping: {target_mapping}")
+                except json.JSONDecodeError:
+                    logger.warning(f"Invalid target_mapping JSON, will auto-encode")
+                    target_mapping = {}
+            
+            # Encode target labels
+            ground_truth_info = {
+                'column_name': target_column,
+                'n_samples': int(len(target_series)),
+                'unique_values': target_series.unique().tolist(),
+                'n_unique': int(target_series.nunique()),
+                'dtype': str(target_series.dtype)
+            }
+            
+            # Check if already numeric
+            if pd.api.types.is_numeric_dtype(target_series):
+                logger.info("Target column is already numeric")
+                ground_truth_encoded = target_series.values
+                ground_truth_info['encoding'] = 'none (already numeric)'
+                ground_truth_info['mapping'] = {}
+            
+            # Apply custom mapping
+            elif target_mapping:
+                logger.info("Applying custom mapping to target column")
+                ground_truth_encoded = target_series.map(target_mapping).values
+                
+                # Check for unmapped values
+                if pd.isna(ground_truth_encoded).any():
+                    unmapped = target_series[pd.isna(ground_truth_encoded)].unique()
+                    raise ValueError(
+                        f"Custom mapping incomplete. Unmapped values: {unmapped.tolist()}"
+                    )
+                
+                ground_truth_info['encoding'] = 'custom'
+                ground_truth_info['mapping'] = target_mapping
+            
+            # Auto-encode categorical
+            else:
+                logger.info("Auto-encoding categorical target column")
+                unique_vals = sorted(target_series.unique())
+                auto_mapping = {val: idx for idx, val in enumerate(unique_vals)}
+                ground_truth_encoded = target_series.map(auto_mapping).values
+                
+                ground_truth_info['encoding'] = 'auto (alphabetical)'
+                ground_truth_info['mapping'] = auto_mapping
+                logger.info(f"Auto-generated mapping: {auto_mapping}")
+            
+            # Validate encoding
+            ground_truth_encoded = ground_truth_encoded.astype(int)
+            ground_truth_info['encoded_range'] = [int(ground_truth_encoded.min()), int(ground_truth_encoded.max())]
+            ground_truth_info['encoded_unique'] = int(len(np.unique(ground_truth_encoded)))
+            
+            # Log distribution
+            logger.info("Ground truth distribution:")
+            for label in np.unique(ground_truth_encoded):
+                count = np.sum(ground_truth_encoded == label)
+                pct = count / len(ground_truth_encoded) * 100
+                logger.info(f"  Class {label}: {count} samples ({pct:.1f}%)")
+            
+            # Remove target column from features
+            df_features = df.drop(columns=[target_column])
+            logger.info(f"Removed target column from features: {df_features.shape[1]} features remain")
+            
+            return df_features, ground_truth_encoded, ground_truth_info
+        
         def validate_data(df):
-            #Validate dataset and generate metadata#
             logger.info("Validating data...")
             
             validation = {
@@ -229,26 +328,37 @@ implementation:
         parser.add_argument("--file_format", default='auto')
         parser.add_argument("--encoding", default='utf-8')
         parser.add_argument("--sep", default=',')
+        parser.add_argument("--target_column", default='')
+        parser.add_argument("--target_mapping", default='{}')
         parser.add_argument("--output_data", required=True)
         parser.add_argument("--output_metadata", required=True)
+        parser.add_argument("--output_ground_truth", required=True)
         args = parser.parse_args()
         
         logger.info("="*80)
-        logger.info("DATA LOADING COMPONENT")
+        logger.info("DATA LOADING COMPONENT (WITH GROUND TRUTH SUPPORT)")
         logger.info("="*80)
         logger.info(f"Input dataset: {args.input_dataset}")
         logger.info(f"Format: {args.file_format}")
-        logger.info(f"Encoding: {args.encoding}")
-        logger.info(f"Separator: {args.sep}")
+        logger.info(f"Target column: {args.target_column if args.target_column else 'None'}")
         logger.info("")
         
         try:
             ensure_directory_exists(args.output_data)
             ensure_directory_exists(args.output_metadata)
+            ensure_directory_exists(args.output_ground_truth)
             
+            # Load data
             data_file_path = find_data_file(args.input_dataset)
             df = load_data(data_file_path, args.file_format, args.encoding, args.sep)
-            validation, metadata = validate_data(df)
+            
+            # Extract ground truth (if specified)
+            df_features, ground_truth, ground_truth_info = extract_ground_truth(
+                df, args.target_column, args.target_mapping
+            )
+            
+            # Validate feature data
+            validation, metadata = validate_data(df_features)
             
             if not validation['is_valid']:
                 logger.error("VALIDATION FAILED")
@@ -261,12 +371,29 @@ implementation:
                 for warning in validation['warnings']:
                     logger.warning(f"  - {warning}")
             
-            df.to_csv(args.output_data, index=False)
-            logger.info(f"Data saved: {args.output_data}")
+            # Add ground truth info to metadata
+            if ground_truth_info:
+                metadata['ground_truth'] = ground_truth_info
             
+            # Save feature data
+            df_features.to_csv(args.output_data, index=False)
+            logger.info(f"Feature data saved: {args.output_data}")
+            
+            # Save metadata
             with open(args.output_metadata, 'w') as f:
                 json.dump(metadata, f, indent=2)
             logger.info(f"Metadata saved: {args.output_metadata}")
+            
+            # Save ground truth
+            if ground_truth is not None:
+                np.save(args.output_ground_truth, ground_truth)
+                logger.info(f"Ground truth saved: {args.output_ground_truth}")
+                logger.info(f"Ground truth shape: {ground_truth.shape}")
+            else:
+                # Create empty file to satisfy output requirement
+                with open(args.output_ground_truth, 'w') as f:
+                    f.write("")
+                logger.info("No ground truth extracted (empty file created)")
             
             logger.info("")
             logger.info("="*80)
@@ -276,8 +403,8 @@ implementation:
             logger.info(f"Features: {metadata['n_features']}")
             logger.info(f"  - Numeric: {len(metadata['numeric_columns'])}")
             logger.info(f"  - Categorical: {len(metadata['categorical_columns'])}")
-            logger.info(f"Missing values: {metadata['missing_values']['percentage']:.2f}%")
-            logger.info(f"Memory: {metadata['memory_mb']:.2f} MB")
+            if ground_truth_info:
+                logger.info(f"Ground truth: {ground_truth_info['n_unique']} classes")
             logger.info("="*80)
             
         except FileNotFoundError as e:
@@ -297,8 +424,13 @@ implementation:
       - {inputValue: encoding}
       - --sep
       - {inputValue: sep}
+      - --target_column
+      - {inputValue: target_column}
+      - --target_mapping
+      - {inputValue: target_mapping}
       - --output_data
       - {outputPath: data}
       - --output_metadata
       - {outputPath: metadata}
-
+      - --output_ground_truth
+      - {outputPath: ground_truth}

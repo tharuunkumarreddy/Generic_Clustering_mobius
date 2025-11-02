@@ -37,12 +37,16 @@ inputs:
 outputs:
   - name: output_train
     type: Data
+    description: 'Training dataset after preprocessing'
   - name: output_test
     type: Data
+    description: 'Test dataset after preprocessing'
   - name: output_scaler
     type: Data
+    description: 'Fitted scaler object'
   - name: output_report
     type: Data
+    description: 'Preprocessing report with statistics'
 
 implementation:
   container:
@@ -66,6 +70,7 @@ implementation:
         import numpy as np
         import logging
         import glob
+        from pathlib import Path
         from sklearn.model_selection import train_test_split
         from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler, LabelEncoder
         from sklearn.impute import SimpleImputer
@@ -81,17 +86,20 @@ implementation:
                 os.makedirs(directory, exist_ok=True)
         
         def find_data_file(input_path):
-            # Find the actual data file in the input path
+            """Find the actual data file in the input path"""
             logger.info(f"Searching for data file in: {input_path}")
             
+            # Check if input_path is a file
             if os.path.isfile(input_path):
                 logger.info(f"Input is a file: {input_path}")
                 return input_path
             
+            # Check if it's a directory
             if os.path.isdir(input_path):
                 logger.info(f"Input is a directory, searching for data file...")
-                patterns = ['*.csv', '*.parquet', '*.pq']
+                patterns = ['*.csv', '*.parquet', '*.pq', 'data.csv', 'data']
                 
+                # Try specific patterns
                 for pattern in patterns:
                     files = glob.glob(os.path.join(input_path, pattern))
                     if files:
@@ -99,7 +107,10 @@ implementation:
                         logger.info(f"Found data file: {data_file}")
                         return data_file
                 
-                all_files = [f for f in os.listdir(input_path) if os.path.isfile(os.path.join(input_path, f))]
+                # Get all files
+                all_files = [f for f in os.listdir(input_path) 
+                            if os.path.isfile(os.path.join(input_path, f)) 
+                            and not f.startswith('.')]
                 if all_files:
                     data_file = os.path.join(input_path, all_files[0])
                     logger.info(f"Using first file: {data_file}")
@@ -110,12 +121,19 @@ implementation:
             raise FileNotFoundError(f"Input path not found: {input_path}")
         
         def load_data(input_path):
+            """Load data from CSV or parquet"""
             logger.info(f"Loading data from: {input_path}")
-            df = pd.read_csv(input_path)
+            
+            if input_path.endswith(('.parquet', '.pq')):
+                df = pd.read_parquet(input_path)
+            else:
+                df = pd.read_csv(input_path)
+            
             logger.info(f"Loaded: {df.shape[0]} rows x {df.shape[1]} columns")
             return df
         
         def analyze_columns(df):
+            """Analyze column types"""
             logger.info("Analyzing columns...")
             numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
             categorical_cols = df.select_dtypes(exclude=[np.number]).columns.tolist()
@@ -124,6 +142,7 @@ implementation:
             return numeric_cols, categorical_cols
         
         def handle_categorical(df, categorical_cols, action, dropped_cols, label_encoders):
+            """Handle categorical columns"""
             if not categorical_cols:
                 return df
             
@@ -145,7 +164,7 @@ implementation:
                         label_encoders[col] = le
                         logger.info(f"Label encoded: {col} ({unique_count} categories)")
                     except Exception as e:
-                        logger.warning(f"Could not encode {col}, dropping it")
+                        logger.warning(f"Could not encode {col}, dropping it: {e}")
                         df_processed = df_processed.drop(columns=[col])
                         dropped_cols.append(col)
                         
@@ -155,13 +174,14 @@ implementation:
                         df_processed = pd.concat([df_processed.drop(columns=[col]), dummies], axis=1)
                         logger.info(f"One-hot encoded: {col}")
                     else:
-                        logger.warning(f"Too many categories in {col}, dropping it")
+                        logger.warning(f"Too many categories in {col} ({unique_count}), dropping it")
                         df_processed = df_processed.drop(columns=[col])
                         dropped_cols.append(col)
             
             return df_processed
         
         def handle_missing(df, method):
+            """Handle missing values"""
             logger.info(f"Handling missing values (method: {method})...")
             missing_before = df.isnull().sum().sum()
             logger.info(f"Missing values: {missing_before}")
@@ -186,19 +206,21 @@ implementation:
             return df_cleaned
         
         def remove_constant_columns(df, dropped_cols):
+            """Remove columns with constant values"""
             logger.info("Checking for constant columns...")
             constant_cols = [col for col in df.columns if df[col].nunique() <= 1]
             
             if constant_cols:
                 df_filtered = df.drop(columns=constant_cols)
                 dropped_cols.extend(constant_cols)
-                logger.info(f"Removed {len(constant_cols)} constant columns")
+                logger.info(f"Removed {len(constant_cols)} constant columns: {constant_cols}")
                 return df_filtered
             else:
                 logger.info("No constant columns")
                 return df
         
         def handle_outliers(df, method, threshold):
+            """Handle outliers using z-score"""
             logger.info(f"Handling outliers (method: {method}, threshold: {threshold})...")
             
             if method == 'none':
@@ -206,27 +228,36 @@ implementation:
                 return df
             
             df_processed = df.copy()
+            outlier_counts = {}
             
             for col in df.columns:
-                z_scores = np.abs(stats.zscore(df_processed[col]))
-                outliers = (z_scores > threshold).sum()
-                
-                if outliers > 0 and method == 'clip':
-                    mean = df_processed[col].mean()
-                    std = df_processed[col].std()
-                    lower = mean - threshold * std
-                    upper = mean + threshold * std
-                    df_processed[col] = df_processed[col].clip(lower, upper)
-                    logger.info(f"Column {col}: clipped {outliers} outliers")
+                try:
+                    z_scores = np.abs(stats.zscore(df_processed[col]))
+                    outliers = (z_scores > threshold).sum()
+                    
+                    if outliers > 0:
+                        outlier_counts[col] = outliers
+                        if method == 'clip':
+                            mean = df_processed[col].mean()
+                            std = df_processed[col].std()
+                            lower = mean - threshold * std
+                            upper = mean + threshold * std
+                            df_processed[col] = df_processed[col].clip(lower, upper)
+                            logger.info(f"Column {col}: clipped {outliers} outliers")
+                except Exception as e:
+                    logger.warning(f"Could not process outliers for {col}: {e}")
             
             if method == 'remove':
+                initial_len = len(df_processed)
                 z_scores = np.abs(stats.zscore(df_processed))
                 df_processed = df_processed[(z_scores < threshold).all(axis=1)]
-                logger.info(f"Removed {len(df) - len(df_processed)} rows with outliers")
+                removed = initial_len - len(df_processed)
+                logger.info(f"Removed {removed} rows with outliers")
             
             return df_processed
         
         def check_data_quality(df):
+            """Perform data quality checks"""
             logger.info("Data quality check...")
             issues = []
             
@@ -242,6 +273,7 @@ implementation:
             else:
                 logger.info(f"Sufficient features: {df.shape[1]}")
             
+            # Check for infinite values
             inf_count = np.isinf(df.values).sum()
             if inf_count > 0:
                 issues.append(f"Found {inf_count} infinite values")
@@ -252,6 +284,7 @@ implementation:
                         df[col].fillna(df[col].median(), inplace=True)
                 logger.info("Replaced infinite values with median")
             
+            # Check for remaining NaN values
             nan_count = df.isnull().sum().sum()
             if nan_count > 0:
                 issues.append(f"Still has {nan_count} NaN values")
@@ -260,9 +293,10 @@ implementation:
             return df, issues
         
         def split_data(df, test_size, random_state):
+            """Split data into train and test sets"""
             logger.info(f"Splitting data (test_size: {test_size})...")
             
-            if test_size == 0:
+            if test_size == 0 or test_size is None:
                 logger.info("No test split (all data for training)")
                 return df, pd.DataFrame(columns=df.columns)
             
@@ -273,6 +307,7 @@ implementation:
             return X_train, X_test
         
         def scale_data(X_train, X_test, method):
+            """Scale features using specified method"""
             logger.info(f"Scaling features (method: {method})...")
             
             if method == 'none':
@@ -297,6 +332,7 @@ implementation:
             logger.info("Scaling completed")
             return X_train_df, X_test_df, scaler
         
+        # Main execution
         parser = argparse.ArgumentParser(description="Preprocess data for clustering")
         parser.add_argument("--input_data", required=True)
         parser.add_argument("--test_size", type=float, default=0.2)
@@ -324,19 +360,23 @@ implementation:
         logger.info("")
         
         try:
+            # Ensure output directories exist
             ensure_directory_exists(args.output_train)
             ensure_directory_exists(args.output_test)
             ensure_directory_exists(args.output_scaler)
             ensure_directory_exists(args.output_report)
             
+            # Load data
             data_file = find_data_file(args.input_data)
             df = load_data(data_file)
             original_shape = df.shape
             original_columns = list(df.columns)
             
+            # Initialize tracking variables
             dropped_cols = []
             label_encoders = {}
             
+            # Preprocessing pipeline
             numeric_cols, categorical_cols = analyze_columns(df)
             df = handle_categorical(df, categorical_cols, args.categorical_action, dropped_cols, label_encoders)
             df = handle_missing(df, args.missing_method)
@@ -346,22 +386,39 @@ implementation:
             
             final_columns = list(df.columns)
             
+            # Split and scale
             X_train, X_test = split_data(df, args.test_size, args.random_state)
             X_train_scaled, X_test_scaled, scaler = scale_data(X_train, X_test, args.scaling_method)
             
+            # Save outputs - ensure data directories are created
+            train_dir = os.path.dirname(args.output_train)
+            if train_dir:
+                os.makedirs(train_dir, exist_ok=True)
             X_train_scaled.to_csv(args.output_train, index=False)
             logger.info(f"Train data saved: {args.output_train}")
             
+            test_dir = os.path.dirname(args.output_test)
+            if test_dir:
+                os.makedirs(test_dir, exist_ok=True)
             if not X_test_scaled.empty:
                 X_test_scaled.to_csv(args.output_test, index=False)
             else:
                 pd.DataFrame(columns=X_train_scaled.columns).to_csv(args.output_test, index=False)
             logger.info(f"Test data saved: {args.output_test}")
             
+            # Save scaler
+            scaler_dir = os.path.dirname(args.output_scaler)
+            if scaler_dir:
+                os.makedirs(scaler_dir, exist_ok=True)
             with open(args.output_scaler, 'wb') as f:
-                pickle.dump({'scaler': scaler, 'label_encoders': label_encoders, 'final_columns': final_columns}, f)
+                pickle.dump({
+                    'scaler': scaler, 
+                    'label_encoders': label_encoders, 
+                    'final_columns': final_columns
+                }, f)
             logger.info(f"Scaler saved: {args.output_scaler}")
             
+            # Generate report
             report = {
                 'original_shape': list(original_shape),
                 'final_shape': [len(X_train_scaled) + len(X_test_scaled), X_train_scaled.shape[1]],
@@ -378,10 +435,14 @@ implementation:
                 'quality_issues': issues
             }
             
+            report_dir = os.path.dirname(args.output_report)
+            if report_dir:
+                os.makedirs(report_dir, exist_ok=True)
             with open(args.output_report, 'w') as f:
                 json.dump(report, f, indent=2)
             logger.info(f"Report saved: {args.output_report}")
             
+            # Summary
             logger.info("")
             logger.info("="*80)
             logger.info("PREPROCESSING COMPLETED SUCCESSFULLY")
@@ -391,6 +452,8 @@ implementation:
             logger.info(f"Dropped columns: {len(dropped_cols)}")
             logger.info(f"Train samples: {len(X_train_scaled)}")
             logger.info(f"Test samples: {len(X_test_scaled)}")
+            if issues:
+                logger.info(f"Quality issues: {len(issues)}")
             logger.info("="*80)
             
         except Exception as e:

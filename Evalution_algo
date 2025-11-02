@@ -68,7 +68,6 @@ implementation:
         )
         
         def find_file(input_path, file_patterns=None):
-            #Find file in directory or return path if it's a file#
             print(f"Searching for file in: {input_path}")
             
             if os.path.isfile(input_path):
@@ -104,7 +103,6 @@ implementation:
             raise FileNotFoundError(f"Path not found: {input_path}")
         
         def load_data(data_path):
-            #Load data from file#
             print(f"Loading data from: {data_path}")
             
             data_file = find_file(data_path, ['*.csv', '*.npy', 'data'])
@@ -122,7 +120,6 @@ implementation:
             return data
         
         def load_labels(labels_path):
-            #Load cluster labels#
             print(f"Loading labels from: {labels_path}")
             
             labels_file = find_file(labels_path, ['*.csv', '*.npy', 'data'])
@@ -148,7 +145,6 @@ implementation:
             return labels
         
         def validate_inputs(data, labels):
-            #Validate data and labels#
             print(f"Validating inputs...")
             
             if len(data) != len(labels):
@@ -175,7 +171,6 @@ implementation:
             return n_clusters, n_noise
         
         def calculate_basic_statistics(labels):
-            #Calculate basic cluster statistics#
             print(f"[1/5] Calculating basic statistics...")
             
             unique_labels = np.unique(labels)
@@ -210,7 +205,6 @@ implementation:
             return stats
         
         def calculate_internal_metrics(data, labels):
-            #Calculate internal validation metrics#
             print(f"[2/5] Calculating internal metrics...")
             
             valid_mask = labels != -1
@@ -276,7 +270,6 @@ implementation:
             return metrics
         
         def calculate_external_metrics(pred_labels, true_labels):
-            #Calculate external validation metrics#
             print(f"[3/5] Calculating external metrics (vs ground truth)...")
             
             valid_mask = pred_labels != -1
@@ -326,7 +319,6 @@ implementation:
             return metrics
         
         def calculate_cluster_quality(data, labels):
-            #Calculate cluster quality metrics#
             print(f"[4/5] Calculating cluster quality metrics...")
             
             valid_mask = labels != -1
@@ -396,7 +388,6 @@ implementation:
             return metrics
         
         def calculate_per_cluster_statistics(data, labels, calculate_detailed):
-            #Calculate statistics for each cluster#
             print(f"[5/5] Calculating per-cluster statistics...")
             
             if not calculate_detailed:
@@ -454,15 +445,14 @@ implementation:
             return per_cluster_stats
         
         def generate_summary_report(evaluation_results):
-            #Generate human-readable summary report#
             lines = []
             lines.append("=" * 80)
             lines.append("CLUSTERING EVALUATION SUMMARY")
             lines.append("=" * 80)
             
             basic = evaluation_results['basic_statistics']
-            lines.append(f"")
-            lines.append(f"Dataset Overview:")
+            lines.append("")
+            lines.append("Dataset Overview:")
             lines.append(f"  Dataset: {evaluation_results.get('dataset', 'Unknown')}")
             lines.append(f"  Algorithm: {evaluation_results.get('algorithm', 'Unknown')}")
             lines.append(f"  Total samples: {basic['n_samples']}")
@@ -473,8 +463,8 @@ implementation:
             
             if evaluation_results.get('internal_metrics') and not evaluation_results['internal_metrics'].get('reason'):
                 internal = evaluation_results['internal_metrics']
-                lines.append(f"")
-                lines.append(f"Internal Metrics (Clustering Quality):")
+                lines.append("")
+                lines.append("Internal Metrics (Clustering Quality):")
                 
                 if internal.get('silhouette_score') is not None:
                     sil = internal['silhouette_score']
@@ -487,22 +477,22 @@ implementation:
                     else:
                         quality = "Poor"
                     lines.append(f"  Silhouette Score: {sil:.4f} ({quality})")
-                    lines.append(f"    -> Range: -1 to 1 (higher is better)")
+                    lines.append("    -> Range: -1 to 1 (higher is better)")
                 
                 if internal.get('davies_bouldin_score') is not None:
                     db = internal['davies_bouldin_score']
                     lines.append(f"  Davies-Bouldin Score: {db:.4f}")
-                    lines.append(f"    -> Range: 0 to inf (lower is better)")
+                    lines.append("    -> Range: 0 to inf (lower is better)")
                 
                 if internal.get('calinski_harabasz_score') is not None:
                     ch = internal['calinski_harabasz_score']
                     lines.append(f"  Calinski-Harabasz Score: {ch:.4f}")
-                    lines.append(f"    -> Range: 0 to inf (higher is better)")
+                    lines.append("    -> Range: 0 to inf (higher is better)")
             
             if evaluation_results.get('external_metrics') and evaluation_results['external_metrics'].get('available'):
                 external = evaluation_results['external_metrics']
-                lines.append(f"")
-                lines.append(f"External Metrics (vs Ground Truth):")
+                lines.append("")
+                lines.append("External Metrics (vs Ground Truth):")
                 
                 if external.get('adjusted_rand_index') is not None:
                     ari = external['adjusted_rand_index']
@@ -515,7 +505,7 @@ implementation:
                     else:
                         match = "Poor"
                     lines.append(f"  Adjusted Rand Index: {ari:.4f} ({match})")
-                    lines.append(f"    -> 1.0 = perfect match with ground truth")
+                    lines.append("    -> 1.0 = perfect match with ground truth")
                 
                 if external.get('adjusted_mutual_info') is not None:
                     ami = external['adjusted_mutual_info']
@@ -527,8 +517,8 @@ implementation:
             
             if evaluation_results.get('cluster_quality') and not evaluation_results['cluster_quality'].get('error'):
                 quality = evaluation_results['cluster_quality']
-                lines.append(f"")
-                lines.append(f"Cluster Quality:")
+                lines.append("")
+                lines.append("Cluster Quality:")
                 
                 if quality.get('mean_intra_cluster_distance'):
                     lines.append(f"  Intra-cluster distance (compactness): {quality['mean_intra_cluster_distance']:.4f}")
@@ -547,11 +537,11 @@ implementation:
                     else:
                         quality_label = "Poor"
                     lines.append(f"  Separation ratio: {ratio:.4f} ({quality_label})")
-                    lines.append(f"    -> Higher is better (well-separated clusters)")
+                    lines.append("    -> Higher is better (well-separated clusters)")
             
             if evaluation_results.get('per_cluster_statistics'):
-                lines.append(f"")
-                lines.append(f"Per-Cluster Summary:")
+                lines.append("")
+                lines.append("Per-Cluster Summary:")
                 for cluster_key in sorted(evaluation_results['per_cluster_statistics'].keys()):
                     stats = evaluation_results['per_cluster_statistics'][cluster_key]
                     sil = stats.get('silhouette_score')
@@ -560,22 +550,7 @@ implementation:
             
             lines.append("=" * 80)
             
-            return '\n'.join(lines)
-        
-        def save_outputs(evaluation_results, summary, output_results, output_summary):
-            #Save evaluation results and summary#
-            print(f"Saving outputs...")
-            
-            os.makedirs(os.path.dirname(output_results), exist_ok=True)
-            os.makedirs(os.path.dirname(output_summary), exist_ok=True)
-            
-            with open(output_results, 'w') as f:
-                json.dump(evaluation_results, f, indent=2)
-            print(f"Results saved: {output_results}")
-            
-            with open(output_summary, 'w') as f:
-                f.write(summary)
-            print(f"Summary saved: {output_summary}")
+            return "\n".join(lines)
         
         parser = argparse.ArgumentParser(description="Evaluate clustering results")
         parser.add_argument("--test_data", required=True)
@@ -614,17 +589,24 @@ implementation:
             evaluation_results['internal_metrics'] = calculate_internal_metrics(data, labels)
             
             if args.true_labels and args.true_labels.lower() not in ['none', '']:
-                true_labels = load_labels(args.true_labels)
-                
-                if len(true_labels) != len(labels):
-                    raise ValueError(
-                        f"Ground truth length mismatch: "
-                        f"labels has {len(labels)}, true_labels has {len(true_labels)}"
+                try:
+                    true_labels = load_labels(args.true_labels)
+                    
+                    if len(true_labels) != len(labels):
+                        raise ValueError(
+                            f"Ground truth length mismatch: "
+                            f"labels has {len(labels)}, true_labels has {len(true_labels)}"
+                        )
+                    
+                    evaluation_results['external_metrics'] = calculate_external_metrics(
+                        labels, true_labels
                     )
-                
-                evaluation_results['external_metrics'] = calculate_external_metrics(
-                    labels, true_labels
-                )
+                except FileNotFoundError:
+                    print("Ground truth file not found, skipping external metrics")
+                    evaluation_results['external_metrics'] = None
+                except Exception as e:
+                    print(f"Could not load ground truth: {str(e)}")
+                    evaluation_results['external_metrics'] = None
             else:
                 evaluation_results['external_metrics'] = None
             
@@ -637,12 +619,16 @@ implementation:
             
             summary = generate_summary_report(evaluation_results)
             
-            save_outputs(
-                evaluation_results=evaluation_results,
-                summary=summary,
-                output_results=args.output_evaluation_results,
-                output_summary=args.output_evaluation_summary
-            )
+            os.makedirs(os.path.dirname(args.output_evaluation_results) or '.', exist_ok=True)
+            os.makedirs(os.path.dirname(args.output_evaluation_summary) or '.', exist_ok=True)
+            
+            with open(args.output_evaluation_results, 'w') as f:
+                json.dump(evaluation_results, f, indent=2)
+            print(f"Results saved: {args.output_evaluation_results}")
+            
+            with open(args.output_evaluation_summary, 'w') as f:
+                f.write(summary)
+            print(f"Summary saved: {args.output_evaluation_summary}")
             
             print("")
             print(summary)
@@ -650,26 +636,6 @@ implementation:
             print("")
             print("="*80)
             print("EVALUATION COMPLETED SUCCESSFULLY")
-            print("="*80)
-            print(f"Algorithm: {args.algorithm}")
-            print(f"Dataset: {args.dataset_name}")
-            print(f"Samples: {data.shape[0]}")
-            print(f"Clusters: {n_clusters}")
-            if n_noise > 0:
-                print(f"Noise: {n_noise} ({n_noise/len(labels)*100:.1f}%)")
-            
-            internal = evaluation_results.get('internal_metrics', {})
-            if internal.get('silhouette_score') is not None:
-                sil = internal['silhouette_score']
-                if sil > 0.7:
-                    print(f"Quality: Excellent (Silhouette > 0.7)")
-                elif sil > 0.5:
-                    print(f"Quality: Good (Silhouette > 0.5)")
-                elif sil > 0.25:
-                    print(f"Quality: Fair (Silhouette > 0.25)")
-                else:
-                    print(f"Quality: Poor (Silhouette < 0.25)")
-            
             print("="*80)
             
         except Exception as e:

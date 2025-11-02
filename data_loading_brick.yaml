@@ -55,10 +55,8 @@ implementation:
                 os.makedirs(directory, exist_ok=True)
         
         def find_data_file(input_path):
-            """
-            Find the actual data file in the input path.
-            Input can be either a file or a directory.
-            """
+            # Find the actual data file in the input path.
+            # Input can be either a file or a directory.
             logger.info(f"Searching for data file in: {input_path}")
             
             # If input is a file, return it directly

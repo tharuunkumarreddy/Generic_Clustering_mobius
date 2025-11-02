@@ -127,7 +127,7 @@ implementation:
             return df
         
         def extract_ground_truth(df, target_column, target_mapping_json):
-            #Extract and encode ground truth labels#
+            """Extract and encode ground truth labels"""
             
             if not target_column or target_column == '':
                 logger.info("No target column specified - skipping ground truth extraction")
@@ -384,11 +384,17 @@ implementation:
                 json.dump(metadata, f, indent=2)
             logger.info(f"Metadata saved: {args.output_metadata}")
             
-            # Save ground truth
+            # Save ground truth - FIXED: Use file handle to avoid .npy extension
             if ground_truth is not None:
-                np.save(args.output_ground_truth, ground_truth)
+                with open(args.output_ground_truth, 'wb') as f:
+                    np.save(f, ground_truth, allow_pickle=False)
                 logger.info(f"Ground truth saved: {args.output_ground_truth}")
                 logger.info(f"Ground truth shape: {ground_truth.shape}")
+                # Verify file exists
+                if os.path.exists(args.output_ground_truth):
+                    logger.info(f"Verified: Ground truth file exists at {args.output_ground_truth}")
+                else:
+                    logger.error(f"ERROR: Ground truth file was not created at {args.output_ground_truth}")
             else:
                 # Create empty file to satisfy output requirement
                 with open(args.output_ground_truth, 'w') as f:
@@ -434,4 +440,3 @@ implementation:
       - {outputPath: metadata}
       - --output_ground_truth
       - {outputPath: ground_truth}
-

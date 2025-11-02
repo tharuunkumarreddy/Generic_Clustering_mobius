@@ -53,6 +53,7 @@ implementation:
         import warnings
         import numpy as np
         import pandas as pd
+        import glob
         from pathlib import Path
         
         warnings.filterwarnings('ignore')
@@ -285,8 +286,97 @@ implementation:
             }
         }
         
+        def find_data_file(input_path):
+            #Find the actual data file in the input path - robust version#
+            print(f"Searching for data file in: {input_path}")
+            
+            # Case 1: Direct file path
+            if os.path.isfile(input_path):
+                print(f"Input is a file: {input_path}")
+                return input_path
+            
+            # Case 2: Directory - search for data files
+            if os.path.isdir(input_path):
+                print(f"Input is a directory, searching for data file...")
+                
+                # Try common patterns in order of preference
+                patterns = [
+                    '*.csv',
+                    'data.csv',
+                    'data',
+                    '*.parquet',
+                    '*.pq',
+                    '*.npy'
+                ]
+                
+                for pattern in patterns:
+                    files = glob.glob(os.path.join(input_path, pattern))
+                    if files:
+                        data_file = files[0]
+                        print(f"Found data file using pattern '{pattern}': {data_file}")
+                        return data_file
+                
+                # Last resort: get first non-hidden file
+                all_files = [
+                    f for f in os.listdir(input_path)
+                    if os.path.isfile(os.path.join(input_path, f))
+                    and not f.startswith('.')
+                ]
+                
+                if all_files:
+                    data_file = os.path.join(input_path, all_files[0])
+                    print(f"Using first available file: {data_file}")
+                    return data_file
+                
+                raise FileNotFoundError(f"No data file found in directory: {input_path}")
+            
+            raise FileNotFoundError(f"Input path not found: {input_path}")
+        
+        def load_data_file(file_path):
+            #Load data from file with format auto-detection#
+            print(f"Loading data from: {file_path}")
+            
+            # Detect format from extension or try reading
+            ext = Path(file_path).suffix.lower()
+            
+            try:
+                if ext == '.npy':
+                    X = np.load(file_path)
+                    print(f"Loaded NumPy array")
+                    return X
+                
+                elif ext in ['.parquet', '.pq']:
+                    df = pd.read_parquet(file_path)
+                    print(f"Loaded Parquet file")
+                    return df.values
+                
+                elif ext == '.csv' or ext == '':
+                    # Try CSV first (most common)
+                    try:
+                        df = pd.read_csv(file_path)
+                        print(f"Loaded CSV file")
+                        return df.values
+                    except Exception as csv_error:
+                        # If CSV fails and no extension, try numpy
+                        if ext == '':
+                            print(f"CSV failed, trying NumPy array...")
+                            X = np.load(file_path, allow_pickle=True)
+                            print(f"Loaded as NumPy array")
+                            return X
+                        else:
+                            raise csv_error
+                
+                else:
+                    # Unknown extension, try CSV as fallback
+                    print(f"Unknown extension '{ext}', attempting CSV...")
+                    df = pd.read_csv(file_path)
+                    return df.values
+                    
+            except Exception as e:
+                raise ValueError(f"Failed to load data from {file_path}: {str(e)}")
+        
         def load_algorithm_class(algorithm_name):
-            # Dynamically load algorithm class
+            #Dynamically load algorithm class#
             if algorithm_name not in ALGORITHM_REGISTRY:
                 available = ', '.join(ALGORITHM_REGISTRY.keys())
                 raise ValueError(f"Unknown algorithm: {algorithm_name}. Available: {available}")
@@ -302,7 +392,7 @@ implementation:
                 raise ImportError(f"Failed to import {class_name} from {module_name}: {e}")
         
         def auto_tune_parameters(algorithm_name, default_params, n_samples, n_features):
-            # Auto-tune parameters based on data characteristics
+            #Auto-tune parameters based on data characteristics#
             params = default_params.copy()
             
             print(f"Auto-tuning parameters for {algorithm_name}...")
@@ -345,7 +435,7 @@ implementation:
             return params
         
         def train_model(X_train, algorithm_name, parameters, training_mode='auto'):
-            # Train clustering model using unified pipeline logic
+            #Train clustering model using unified pipeline logic#
             print(f"Training {algorithm_name}...")
             print(f"Data shape: {X_train.shape}")
             print(f"Training mode: {training_mode}")
@@ -394,7 +484,7 @@ implementation:
             return model, train_labels, config
         
         def save_outputs(model, train_labels, X_train, config, parameters, algorithm_name, output_model, output_labels, output_metadata):
-            # Save model and training results
+            #Save model and training results#
             print(f"Saving outputs...")
             
             os.makedirs(os.path.dirname(output_model), exist_ok=True)
@@ -467,26 +557,9 @@ implementation:
         print("")
         
         try:
-            # Load training data
-            print(f"Loading training data from: {args.train_data}")
-            
-            if os.path.isdir(args.train_data):
-                import glob
-                csv_files = glob.glob(os.path.join(args.train_data, '*.csv'))
-                if csv_files:
-                    data_file = csv_files[0]
-                else:
-                    raise FileNotFoundError(f"No CSV file found in {args.train_data}")
-            else:
-                data_file = args.train_data
-            
-            if data_file.endswith('.csv'):
-                df = pd.read_csv(data_file)
-                X_train = df.values
-            elif data_file.endswith('.npy'):
-                X_train = np.load(data_file)
-            else:
-                raise ValueError("Unsupported file format")
+            # Load training data using robust file discovery
+            data_file = find_data_file(args.train_data)
+            X_train = load_data_file(data_file)
             
             print(f"Loaded successfully")
             print(f"Shape: {X_train.shape[0]} samples x {X_train.shape[1]} features")

@@ -19,10 +19,12 @@ inputs:
     default: ','
 
 outputs:
-  - name: output_data
+  - name: data
     type: Data
-  - name: output_metadata
+    description: 'Loaded and validated dataset'
+  - name: metadata
     type: Data
+    description: 'Dataset metadata and validation results'
 
 implementation:
   container:
@@ -55,30 +57,24 @@ implementation:
                 os.makedirs(directory, exist_ok=True)
         
         def find_data_file(input_path):
-            # Find the actual data file in the input path.
-            # Input can be either a file or a directory.
+            """Find the actual data file in the input path"""
             logger.info(f"Searching for data file in: {input_path}")
             
-            # If input is a file, return it directly
             if os.path.isfile(input_path):
                 logger.info(f"Input is a file: {input_path}")
                 return input_path
             
-            # If input is a directory, find the data file inside
             if os.path.isdir(input_path):
                 logger.info(f"Input is a directory, searching for data file...")
-                
-                # Search for common data file extensions
                 patterns = ['*.csv', '*.parquet', '*.pq', '*.xlsx', '*.xls', '*.json']
                 
                 for pattern in patterns:
                     files = glob.glob(os.path.join(input_path, pattern))
                     if files:
-                        data_file = files[0]  # Take the first match
+                        data_file = files[0]
                         logger.info(f"Found data file: {data_file}")
                         return data_file
                 
-                # If no data file found with extensions, list all files
                 all_files = [f for f in os.listdir(input_path) if os.path.isfile(os.path.join(input_path, f))]
                 if all_files:
                     data_file = os.path.join(input_path, all_files[0])
@@ -90,9 +86,9 @@ implementation:
             raise FileNotFoundError(f"Input path not found: {input_path}")
         
         def load_data(input_path, file_format='auto', encoding='utf-8', sep=','):
+            """Load data from various formats"""
             logger.info(f"Loading data from: {input_path}")
             
-            # Auto-detect format
             if file_format == 'auto':
                 ext = Path(input_path).suffix.lower()
                 format_map = {
@@ -107,7 +103,6 @@ implementation:
             
             logger.info(f"Format: {file_format}")
             
-            # Load based on format
             if file_format == 'csv':
                 df = pd.read_csv(input_path, encoding=encoding, sep=sep)
             elif file_format == 'parquet':
@@ -123,6 +118,7 @@ implementation:
             return df
         
         def validate_data(df):
+            """Validate dataset and generate metadata"""
             logger.info("Validating data...")
             
             validation = {
@@ -131,7 +127,6 @@ implementation:
                 'warnings': []
             }
             
-            # Check 1: Empty dataset
             if df.empty:
                 validation['is_valid'] = False
                 validation['errors'].append("Dataset is empty")
@@ -139,18 +134,15 @@ implementation:
             
             logger.info(f"Dataset has {len(df)} samples")
             
-            # Check 2: Minimum samples
             if len(df) < 2:
                 validation['is_valid'] = False
                 validation['errors'].append("Need at least 2 samples")
                 return validation, {}
             
-            # Check 3: Duplicate columns
             if df.columns.duplicated().any():
                 validation['warnings'].append("Duplicate column names")
                 logger.warning("Duplicate column names detected")
             
-            # Identify numeric and categorical columns
             numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
             categorical_cols = df.select_dtypes(exclude=[np.number]).columns.tolist()
             
@@ -161,7 +153,6 @@ implementation:
                 validation['warnings'].append("No numeric columns found")
                 logger.warning("No numeric columns for clustering")
             
-            # Check 4: Missing values
             missing_total = df.isnull().sum().sum()
             missing_pct = (missing_total / (df.shape[0] * df.shape[1])) * 100
             
@@ -178,7 +169,6 @@ implementation:
             else:
                 logger.info("No missing values")
             
-            # Check 5: Infinite values
             inf_count = 0
             for col in numeric_cols:
                 col_inf = df[col].isin([np.inf, -np.inf]).sum()
@@ -191,7 +181,6 @@ implementation:
             else:
                 logger.info("No infinite values")
             
-            # Check 6: Constant columns
             constant_cols = [col for col in df.columns if df[col].nunique() <= 1]
             if constant_cols:
                 msg = f"Constant columns: {constant_cols}"
@@ -200,7 +189,6 @@ implementation:
             else:
                 logger.info("No constant columns")
             
-            # Build metadata
             metadata = {
                 'n_samples': int(df.shape[0]),
                 'n_features': int(df.shape[1]),
@@ -217,7 +205,6 @@ implementation:
                 'memory_mb': float(df.memory_usage(deep=True).sum() / 1024**2)
             }
             
-            # Add statistics for numeric columns
             if numeric_cols:
                 metadata['statistics'] = {}
                 for col in numeric_cols:
@@ -256,37 +243,27 @@ implementation:
         logger.info("")
         
         try:
-            # Ensure output directories exist
             ensure_directory_exists(args.output_data)
             ensure_directory_exists(args.output_metadata)
             
-            # Find the actual data file in the input dataset
             data_file_path = find_data_file(args.input_dataset)
-            
-            # Load data
             df = load_data(data_file_path, args.file_format, args.encoding, args.sep)
-            
-            # Validate data
             validation, metadata = validate_data(df)
             
-            # Check if valid
             if not validation['is_valid']:
                 logger.error("VALIDATION FAILED")
                 for error in validation['errors']:
                     logger.error(f"Error: {error}")
                 sys.exit(1)
             
-            # Show warnings
             if validation['warnings']:
                 logger.warning(f"Warnings: {len(validation['warnings'])}")
                 for warning in validation['warnings']:
                     logger.warning(f"  - {warning}")
             
-            # Save data
             df.to_csv(args.output_data, index=False)
             logger.info(f"Data saved: {args.output_data}")
             
-            # Save metadata
             with open(args.output_metadata, 'w') as f:
                 json.dump(metadata, f, indent=2)
             logger.info(f"Metadata saved: {args.output_metadata}")
@@ -321,6 +298,6 @@ implementation:
       - --sep
       - {inputValue: sep}
       - --output_data
-      - {outputPath: output_data}
+      - {outputPath: data}
       - --output_metadata
-      - {outputPath: output_metadata}
+      - {outputPath: metadata}

@@ -4,53 +4,53 @@ description: Comprehensive preprocessing for clustering algorithms. Handles cate
 inputs:
   - name: input_data
     type: Data
-    description: 'Input data from data loading component'
+    description: Input data from data loading component
   - name: test_size
     type: Float
-    description: 'Test split ratio (0-1)'
+    description: Test split ratio (0-1)
     default: 0.2
   - name: random_state
     type: Integer
-    description: 'Random seed for reproducibility'
+    description: Random seed for reproducibility
     default: 42
   - name: scaling
     type: String
-    description: 'Scaling method: standard, minmax, robust, none'
-    default: 'standard'
+    description: Scaling method - standard, minmax, robust, none
+    default: standard
   - name: missing
     type: String
-    description: 'Missing value handling: mean, median, drop, zero'
-    default: 'mean'
+    description: Missing value handling - mean, median, drop, zero
+    default: mean
   - name: categorical
     type: String
-    description: 'Categorical handling: encode, drop, onehot'
-    default: 'encode'
+    description: Categorical handling - encode, drop, onehot
+    default: encode
   - name: outliers
     type: String
-    description: 'Outlier handling: clip, remove, none'
-    default: 'clip'
+    description: Outlier handling - clip, remove, none
+    default: clip
   - name: outlier_threshold
     type: Float
-    description: 'Z-score threshold for outliers'
+    description: Z-score threshold for outliers
     default: 3.0
   - name: remove_constant
     type: Boolean
-    description: 'Remove constant/low variance columns'
+    description: Remove constant or low variance columns
     default: true
 
 outputs:
   - name: output_train
     type: Data
-    description: 'Preprocessed training data'
+    description: Preprocessed training data
   - name: output_test
     type: Data
-    description: 'Preprocessed test data'
+    description: Preprocessed test data
   - name: output_scaler
     type: Data
-    description: 'Fitted scaler and encoders (pickle file)'
+    description: Fitted scaler and encoders pickle file
   - name: output_report
     type: Data
-    description: 'Preprocessing report (JSON)'
+    description: Preprocessing report JSON
 
 implementation:
   container:
@@ -80,10 +80,7 @@ implementation:
         
         warnings.filterwarnings('ignore')
         
-        
         class ClusteringPreprocessor:
-            """Comprehensive preprocessor for clustering data"""
-            
             def __init__(self):
                 self.scaler = None
                 self.label_encoders = {}
@@ -93,340 +90,249 @@ implementation:
                 self.preprocessing_report = {}
             
             def load_data(self, input_path):
-                """Load input data"""
-                print(f"\n📂 Loading input data from: {input_path}")
-                
+                print(f"Loading input data from: {input_path}")
                 try:
                     df = pd.read_csv(input_path)
-                    print(f"   ✅ Loaded successfully")
-                    print(f"   Shape: {df.shape[0]} rows × {df.shape[1]} columns")
+                    print(f"Loaded successfully")
+                    print(f"Shape: {df.shape[0]} rows x {df.shape[1]} columns")
                     self.original_columns = list(df.columns)
                     return df
                 except Exception as e:
-                    print(f"   ❌ Error loading data: {str(e)}")
+                    print(f"Error loading data: {str(e)}")
                     raise
             
             def analyze_columns(self, df):
-                """Analyze column types and characteristics"""
-                print(f"\n🔍 Analyzing columns...")
-                
+                print(f"Analyzing columns...")
                 numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
                 categorical_cols = df.select_dtypes(exclude=[np.number]).columns.tolist()
-                
-                print(f"   Numeric columns: {len(numeric_cols)}")
+                print(f"Numeric columns: {len(numeric_cols)}")
                 for col in numeric_cols:
-                    print(f"      - {col} ({df[col].dtype})")
-                
+                    print(f"  - {col} ({df[col].dtype})")
                 if categorical_cols:
-                    print(f"   Categorical columns: {len(categorical_cols)}")
+                    print(f"Categorical columns: {len(categorical_cols)}")
                     for col in categorical_cols:
                         unique_count = df[col].nunique()
-                        print(f"      - {col} ({df[col].dtype}, {unique_count} unique values)")
+                        print(f"  - {col} ({df[col].dtype}, {unique_count} unique values)")
                 else:
-                    print(f"   ✅ No categorical columns")
-                
+                    print(f"No categorical columns")
                 return numeric_cols, categorical_cols
             
             def handle_categorical_columns(self, df, categorical_cols, action='encode', max_categories=10):
-                """Handle categorical columns"""
                 if not categorical_cols:
                     return df
-                
-                print(f"\n🎨 Handling categorical columns (action: {action})...")
-                
+                print(f"Handling categorical columns (action: {action})...")
                 df_processed = df.copy()
-                
                 for col in categorical_cols:
                     unique_count = df[col].nunique()
-                    
                     if action == 'drop':
                         df_processed = df_processed.drop(columns=[col])
                         self.dropped_columns.append(col)
-                        print(f"   ✅ Dropped: {col}")
-                        
+                        print(f"Dropped: {col}")
                     elif action == 'encode':
                         try:
                             le = LabelEncoder()
                             df_processed[col] = le.fit_transform(df[col].astype(str))
                             self.label_encoders[col] = le
-                            print(f"   ✅ Label encoded: {col} ({unique_count} categories)")
+                            print(f"Label encoded: {col} ({unique_count} categories)")
                         except Exception as e:
-                            print(f"   ⚠️  Could not encode {col}, dropping it: {str(e)}")
+                            print(f"Could not encode {col}, dropping it: {str(e)}")
                             df_processed = df_processed.drop(columns=[col])
                             self.dropped_columns.append(col)
-                            
                     elif action == 'onehot':
                         if unique_count <= max_categories:
                             dummies = pd.get_dummies(df[col], prefix=col, drop_first=True)
                             df_processed = pd.concat([df_processed.drop(columns=[col]), dummies], axis=1)
-                            print(f"   ✅ One-hot encoded: {col} ({unique_count} categories → {len(dummies.columns)} columns)")
+                            print(f"One-hot encoded: {col} ({unique_count} categories)")
                         else:
-                            print(f"   ⚠️  Too many categories in {col} ({unique_count}), dropping it")
+                            print(f"Too many categories in {col} ({unique_count}), dropping it")
                             df_processed = df_processed.drop(columns=[col])
                             self.dropped_columns.append(col)
-                
                 return df_processed
             
             def handle_missing_values(self, df, method='mean'):
-                """Handle missing values"""
-                print(f"\n🔧 Handling missing values (method: {method})...")
-                
+                print(f"Handling missing values (method: {method})...")
                 missing_before = df.isnull().sum().sum()
                 missing_pct = (missing_before / (df.shape[0] * df.shape[1])) * 100
-                
-                print(f"   Missing values: {missing_before} ({missing_pct:.2f}%)")
-                
+                print(f"Missing values: {missing_before} ({missing_pct:.2f}%)")
                 if missing_before == 0:
-                    print(f"   ✅ No missing values")
+                    print(f"No missing values")
                     return df
-                
                 missing_cols = df.columns[df.isnull().any()].tolist()
                 for col in missing_cols:
                     miss_count = df[col].isnull().sum()
                     miss_pct = (miss_count / len(df)) * 100
-                    print(f"      - {col}: {miss_count} ({miss_pct:.1f}%)")
-                
+                    print(f"  - {col}: {miss_count} ({miss_pct:.1f}%)")
                 original_shape = df.shape
-                
                 if method == 'drop':
                     df_cleaned = df.dropna()
                     rows_dropped = original_shape[0] - df_cleaned.shape[0]
-                    print(f"   ✅ Dropped {rows_dropped} rows")
-                    
+                    print(f"Dropped {rows_dropped} rows")
                 elif method == 'zero':
                     df_cleaned = df.fillna(0)
-                    print(f"   ✅ Filled with 0")
-                    
+                    print(f"Filled with 0")
                 elif method in ['mean', 'median']:
                     imputer = SimpleImputer(strategy=method)
-                    df_cleaned = pd.DataFrame(
-                        imputer.fit_transform(df),
-                        columns=df.columns
-                    )
-                    print(f"   ✅ Imputed with {method}")
+                    df_cleaned = pd.DataFrame(imputer.fit_transform(df), columns=df.columns)
+                    print(f"Imputed with {method}")
                 else:
                     raise ValueError(f"Unknown method: {method}")
-                
                 return df_cleaned
             
             def remove_constant_columns(self, df, variance_threshold=0.0):
-                """Remove constant or near-constant columns"""
-                print(f"\n🔍 Checking for constant/low-variance columns...")
-                
+                print(f"Checking for constant or low-variance columns...")
                 constant_cols = []
-                
                 for col in df.columns:
                     if df[col].nunique() <= 1:
                         constant_cols.append(col)
-                        print(f"   ⚠️  Constant column (will remove): {col}")
+                        print(f"Constant column (will remove): {col}")
                     elif df[col].var() < variance_threshold and variance_threshold > 0:
                         constant_cols.append(col)
-                        print(f"   ⚠️  Low variance column (will remove): {col} (var={df[col].var():.6f})")
-                
+                        print(f"Low variance column (will remove): {col} (var={df[col].var():.6f})")
                 if constant_cols:
                     df_filtered = df.drop(columns=constant_cols)
                     self.dropped_columns.extend(constant_cols)
-                    print(f"   ✅ Removed {len(constant_cols)} constant/low-variance columns")
+                    print(f"Removed {len(constant_cols)} constant or low-variance columns")
                     return df_filtered
                 else:
-                    print(f"   ✅ No constant columns")
+                    print(f"No constant columns")
                     return df
             
             def handle_outliers(self, df, method='clip', threshold=3.0):
-                """Handle outliers in numeric columns"""
-                print(f"\n📊 Handling outliers (method: {method}, threshold: {threshold})...")
-                
+                print(f"Handling outliers (method: {method}, threshold: {threshold})...")
                 if method == 'none':
-                    print(f"   ✅ Skipping outlier handling")
+                    print(f"Skipping outlier handling")
                     return df
-                
                 df_processed = df.copy()
-                
                 for col in df.columns:
                     z_scores = np.abs(stats.zscore(df_processed[col]))
                     outliers = (z_scores > threshold).sum()
-                    
                     if outliers > 0:
                         outlier_pct = (outliers / len(df)) * 100
-                        print(f"   Column '{col}': {outliers} outliers ({outlier_pct:.1f}%)")
-                        
+                        print(f"Column {col}: {outliers} outliers ({outlier_pct:.1f}%)")
                         if method == 'clip':
                             mean = df_processed[col].mean()
                             std = df_processed[col].std()
                             lower = mean - threshold * std
                             upper = mean + threshold * std
                             df_processed[col] = df_processed[col].clip(lower, upper)
-                            print(f"      ✅ Clipped to [{lower:.3f}, {upper:.3f}]")
-                
+                            print(f"  Clipped to [{lower:.3f}, {upper:.3f}]")
                 if method == 'remove':
                     z_scores = np.abs(stats.zscore(df_processed))
                     df_processed = df_processed[(z_scores < threshold).all(axis=1)]
                     rows_removed = len(df) - len(df_processed)
-                    print(f"   ✅ Removed {rows_removed} rows with outliers")
-                
+                    print(f"Removed {rows_removed} rows with outliers")
                 return df_processed
             
             def check_data_quality(self, df):
-                """Check final data quality"""
-                print(f"\n✅ Data Quality Check...")
-                
+                print(f"Data Quality Check...")
                 issues = []
-                
                 if len(df) < 10:
                     issues.append(f"Very few samples: {len(df)}")
-                    print(f"   ⚠️  Very few samples: {len(df)}")
+                    print(f"Very few samples: {len(df)}")
                 else:
-                    print(f"   ✅ Sufficient samples: {len(df)}")
-                
+                    print(f"Sufficient samples: {len(df)}")
                 if df.shape[1] < 2:
                     issues.append(f"Less than 2 features: {df.shape[1]}")
-                    print(f"   ⚠️  Less than 2 features: {df.shape[1]}")
+                    print(f"Less than 2 features: {df.shape[1]}")
                 else:
-                    print(f"   ✅ Sufficient features: {df.shape[1]}")
-                
+                    print(f"Sufficient features: {df.shape[1]}")
                 inf_count = np.isinf(df.values).sum()
                 if inf_count > 0:
                     issues.append(f"Found {inf_count} infinite values")
-                    print(f"   ⚠️  Infinite values: {inf_count}")
+                    print(f"Infinite values: {inf_count}")
                     df = df.replace([np.inf, -np.inf], np.nan)
                     for col in df.columns:
                         if df[col].isnull().any():
                             df[col].fillna(df[col].median(), inplace=True)
-                    print(f"      ✅ Replaced infinite values with median")
+                    print(f"Replaced infinite values with median")
                 else:
-                    print(f"   ✅ No infinite values")
-                
+                    print(f"No infinite values")
                 nan_count = df.isnull().sum().sum()
                 if nan_count > 0:
                     issues.append(f"Still has {nan_count} NaN values")
-                    print(f"   ⚠️  NaN values remaining: {nan_count}")
+                    print(f"NaN values remaining: {nan_count}")
                 else:
-                    print(f"   ✅ No NaN values")
-                
+                    print(f"No NaN values")
                 non_numeric = df.select_dtypes(exclude=[np.number]).columns.tolist()
                 if non_numeric:
                     issues.append(f"Non-numeric columns: {non_numeric}")
-                    print(f"   ⚠️  Non-numeric columns: {non_numeric}")
+                    print(f"Non-numeric columns: {non_numeric}")
                 else:
-                    print(f"   ✅ All columns are numeric")
-                
+                    print(f"All columns are numeric")
                 return df, issues
             
             def split_data(self, df, test_size=0.2, random_state=42):
-                """Split into train and test"""
-                print(f"\n✂️  Splitting data (test_size: {test_size})...")
-                
+                print(f"Splitting data (test_size: {test_size})...")
                 if test_size == 0:
-                    print(f"   ✅ No test split (all data for training)")
+                    print(f"No test split (all data for training)")
                     return df, pd.DataFrame(columns=df.columns)
-                
-                X_train, X_test = train_test_split(
-                    df, test_size=test_size, random_state=random_state
-                )
-                
-                print(f"   ✅ Train: {len(X_train)} samples ({(1-test_size)*100:.1f}%)")
-                print(f"   ✅ Test: {len(X_test)} samples ({test_size*100:.1f}%)")
-                
+                X_train, X_test = train_test_split(df, test_size=test_size, random_state=random_state)
+                print(f"Train: {len(X_train)} samples ({(1-test_size)*100:.1f}%)")
+                print(f"Test: {len(X_test)} samples ({test_size*100:.1f}%)")
                 return X_train, X_test
             
             def scale_data(self, X_train, X_test, method='standard'):
-                """Scale features"""
-                print(f"\n📏 Scaling features (method: {method})...")
-                
+                print(f"Scaling features (method: {method})...")
                 if method == 'none':
-                    print(f"   ✅ No scaling applied")
+                    print(f"No scaling applied")
                     self.scaler = None
                     return X_train, X_test
-                
                 if method == 'standard':
                     self.scaler = StandardScaler()
-                    print(f"   Using StandardScaler (mean=0, std=1)")
+                    print(f"Using StandardScaler (mean=0, std=1)")
                 elif method == 'minmax':
                     self.scaler = MinMaxScaler()
-                    print(f"   Using MinMaxScaler (range: 0-1)")
+                    print(f"Using MinMaxScaler (range: 0-1)")
                 elif method == 'robust':
                     self.scaler = RobustScaler()
-                    print(f"   Using RobustScaler (median-based, robust to outliers)")
+                    print(f"Using RobustScaler (median-based, robust to outliers)")
                 else:
                     raise ValueError(f"Unknown scaling method: {method}")
-                
                 X_train_scaled = self.scaler.fit_transform(X_train)
                 X_test_scaled = self.scaler.transform(X_test) if not X_test.empty else X_test.values
-                
                 X_train_df = pd.DataFrame(X_train_scaled, columns=X_train.columns)
                 X_test_df = pd.DataFrame(X_test_scaled, columns=X_test.columns) if not X_test.empty else X_test
-                
-                print(f"   ✅ Scaling completed")
-                
-                print(f"   Sample statistics (first 3 features):")
+                print(f"Scaling completed")
+                print(f"Sample statistics (first 3 features):")
                 for col in X_train_df.columns[:3]:
-                    print(f"      {col}: mean={X_train_df[col].mean():.3f}, std={X_train_df[col].std():.3f}")
-                
+                    print(f"  {col}: mean={X_train_df[col].mean():.3f}, std={X_train_df[col].std():.3f}")
                 return X_train_df, X_test_df
             
             def save_outputs(self, X_train, X_test, output_train, output_test, output_scaler, output_report):
-                """Save all outputs"""
-                print(f"\n💾 Saving outputs...")
-                
+                print(f"Saving outputs...")
                 for path in [output_train, output_test, output_scaler, output_report]:
                     os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
-                
                 X_train.to_csv(output_train, index=False)
-                print(f"   ✅ Train data: {output_train}")
-                print(f"      Shape: {X_train.shape}")
-                
+                print(f"Train data: {output_train}")
+                print(f"  Shape: {X_train.shape}")
                 if not X_test.empty:
                     X_test.to_csv(output_test, index=False)
-                    print(f"   ✅ Test data: {output_test}")
-                    print(f"      Shape: {X_test.shape}")
+                    print(f"Test data: {output_test}")
+                    print(f"  Shape: {X_test.shape}")
                 else:
                     pd.DataFrame(columns=X_train.columns).to_csv(output_test, index=False)
-                    print(f"   ✅ Test data (empty): {output_test}")
-                
+                    print(f"Test data (empty): {output_test}")
                 with open(output_scaler, 'wb') as f:
-                    pickle.dump({
-                        'scaler': self.scaler,
-                        'label_encoders': self.label_encoders,
-                        'final_columns': self.final_columns
-                    }, f)
-                print(f"   ✅ Scaler & encoders: {output_scaler}")
-                
+                    pickle.dump({'scaler': self.scaler, 'label_encoders': self.label_encoders, 'final_columns': self.final_columns}, f)
+                print(f"Scaler and encoders: {output_scaler}")
                 with open(output_report, 'w') as f:
                     json.dump(self.preprocessing_report, f, indent=2)
-                print(f"   ✅ Preprocessing report: {output_report}")
+                print(f"Preprocessing report: {output_report}")
         
-        
-        def run_preprocessing(
-            input_path, output_train, output_test, output_scaler, output_report,
-            test_size=0.2, random_state=42, scaling='standard', missing='mean',
-            categorical='encode', outliers='clip', outlier_threshold=3.0, remove_constant=True
-        ):
-            """Main preprocessing pipeline"""
-            
+        def run_preprocessing(input_path, output_train, output_test, output_scaler, output_report, test_size=0.2, random_state=42, scaling='standard', missing='mean', categorical='encode', outliers='clip', outlier_threshold=3.0, remove_constant=True):
             preprocessor = ClusteringPreprocessor()
-            
             df = preprocessor.load_data(input_path)
             original_shape = df.shape
-            
             numeric_cols, categorical_cols = preprocessor.analyze_columns(df)
-            
             df = preprocessor.handle_categorical_columns(df, categorical_cols, action=categorical)
-            
             df = preprocessor.handle_missing_values(df, method=missing)
-            
             if remove_constant:
                 df = preprocessor.remove_constant_columns(df)
-            
             df = preprocessor.handle_outliers(df, method=outliers, threshold=outlier_threshold)
-            
             df, issues = preprocessor.check_data_quality(df)
-            
             preprocessor.final_columns = list(df.columns)
-            
             X_train, X_test = preprocessor.split_data(df, test_size=test_size, random_state=random_state)
-            
             X_train_scaled, X_test_scaled = preprocessor.scale_data(X_train, X_test, method=scaling)
-            
             preprocessor.preprocessing_report = {
                 'original_shape': list(original_shape),
                 'final_shape': [len(X_train_scaled) + len(X_test_scaled), X_train_scaled.shape[1]],
@@ -442,14 +348,8 @@ implementation:
                 'test_samples': len(X_test_scaled),
                 'quality_issues': issues
             }
-            
-            preprocessor.save_outputs(
-                X_train_scaled, X_test_scaled,
-                output_train, output_test, output_scaler, output_report
-            )
-            
+            preprocessor.save_outputs(X_train_scaled, X_test_scaled, output_train, output_test, output_scaler, output_report)
             return len(X_train_scaled), len(X_test_scaled), preprocessor.preprocessing_report
-        
         
         parser = argparse.ArgumentParser(description='Comprehensive preprocessing for clustering algorithms')
         parser.add_argument('--input_data', required=True)
@@ -467,10 +367,10 @@ implementation:
         parser.add_argument('--output_report', required=True)
         args = parser.parse_args()
         
-        print("\n" + "="*80)
-        print("    DATA PREPROCESSING FOR CLUSTERING")
-        print("="*80)
-        print(f"\nConfiguration:")
+        print("=" * 80)
+        print("DATA PREPROCESSING FOR CLUSTERING")
+        print("=" * 80)
+        print(f"Configuration:")
         print(f"  Input: {args.input_data}")
         print(f"  Test size: {args.test_size}")
         print(f"  Scaling: {args.scaling}")
@@ -495,36 +395,30 @@ implementation:
                 outlier_threshold=args.outlier_threshold,
                 remove_constant=args.remove_constant
             )
-            
-            print(f"\n" + "="*80)
-            print("✅ PREPROCESSING COMPLETED SUCCESSFULLY")
-            print("="*80)
-            print(f"\nTransformation Summary:")
-            print(f"  Original: {report['original_shape'][0]} rows × {report['original_shape'][1]} cols")
-            print(f"  Final: {report['final_shape'][0]} rows × {report['final_shape'][1]} cols")
+            print("=" * 80)
+            print("PREPROCESSING COMPLETED SUCCESSFULLY")
+            print("=" * 80)
+            print(f"Transformation Summary:")
+            print(f"  Original: {report['original_shape'][0]} rows x {report['original_shape'][1]} cols")
+            print(f"  Final: {report['final_shape'][0]} rows x {report['final_shape'][1]} cols")
             print(f"  Dropped columns: {len(report['dropped_columns'])}")
             if report['dropped_columns']:
                 print(f"    {report['dropped_columns']}")
             print(f"  Train samples: {n_train}")
             print(f"  Test samples: {n_test}")
-            print(f"  Final features: {report['final_columns'][:5]}{'...' if len(report['final_columns']) > 5 else ''}")
-            
+            print(f"  Final features: {report['final_columns'][:5]}")
             if report['quality_issues']:
-                print(f"\n⚠️  Quality Issues:")
+                print(f"Quality Issues:")
                 for issue in report['quality_issues']:
-                    print(f"    - {issue}")
-            
-            print(f"\n✅ Data is ready for clustering!")
-            print("="*80 + "\n")
-            
+                    print(f"  - {issue}")
+            print(f"Data is ready for clustering!")
+            print("=" * 80)
             sys.exit(0)
-            
         except Exception as e:
-            print(f"\n❌ ERROR: {str(e)}")
+            print(f"ERROR: {str(e)}")
             import traceback
             traceback.print_exc()
             sys.exit(1)
-
     args:
       - --input_data
       - {inputPath: input_data}
